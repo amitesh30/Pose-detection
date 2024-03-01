@@ -60,7 +60,7 @@ def build_model(HIDDEN_UNITS=256, sequence_length=30, num_input_values=33*4, num
     model = Model(inputs=[inputs], outputs=x)
 
     ## Load Model Weights
-    load_dir = "./models/LSTM_Attention.h5"  
+    load_dir = "LSTM_Attention.h5"  
     model.load_weights(load_dir)
     
     return model
