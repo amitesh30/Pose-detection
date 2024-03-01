@@ -12,3 +12,4 @@ pillow==9.1.1
 opencv-python
 tensorflow
 moviepy
+mediapy
