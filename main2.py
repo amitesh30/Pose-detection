@@ -8,6 +8,9 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (LSTM, Dense, Dropout, Input, Flatten, 
                                      Bidirectional, Permute, multiply)
 import mediapy
+import tempfile
+import shutil
+
 
 # Load the pose estimation model from Mediapipe
 mp_pose = mp.solutions.pose 
@@ -61,16 +64,10 @@ class VideoProcessor:
         self.squat_stage = None
         self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-    def process_video(self, video_file):
-        # Get the filename from the file object
-        filename = "temp_video.mp4"
-        # Create a temporary file to write the contents of the uploaded video file
-        with open(filename, 'wb') as temp_file:
-            temp_file.write(video_file.read())
-
-        # Process the video and save the processed video to a new file
-        output_filename = "processed_video.mp4"
-        cap = cv2.VideoCapture(filename)
+    def process_video(self, video_path, output_dir):
+        # Process the video and save the processed video to the output directory
+        output_filename = os.path.join(output_dir, "processed_video.mp4")
+        cap = cv2.VideoCapture(video_path)
         frame_width = int(cap.get(3))
         frame_height = int(cap.get(4))
         out = cv2.VideoWriter(output_filename, cv2.VideoWriter_fourcc(*'h264'), 30, (frame_width, frame_height))
@@ -84,9 +81,6 @@ class VideoProcessor:
             out.write(processed_frame)
         cap.release()
         out.release()
-
-        # Remove the temporary file
-        os.remove(filename)
 
         # Return the path to the processed video file
         return output_filename
@@ -308,18 +302,31 @@ class VideoProcessor:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
 
 # Define Streamlit app
+
 def main():
     st.title("Real-time Exercise Detection")
     video_file = st.file_uploader("Upload a video file", type=["mp4", "avi"])
     if video_file is not None:
+        # Create a temporary directory
+        temp_dir = tempfile.mkdtemp()
+
+        # Save the uploaded video file into the temporary directory
+        uploaded_video_path = os.path.join(temp_dir, "uploaded_video.mp4")
+        with open(uploaded_video_path, 'wb') as temp_file:
+            temp_file.write(video_file.read())
+
+        # Process the video
         video_processor = VideoProcessor()
+        output_dir = "output"  # Output directory
+        os.makedirs(output_dir, exist_ok=True)  # Create the output directory if it doesn't exist
+        output_video_path = video_processor.process_video(uploaded_video_path, output_dir)
+
+        # Display the processed video
+      
+        st.video(output_video_path)
+
+        # Remove the temporary directory and its contents
         
-        output_video = video_processor.process_video(video_file)
-        
-        
-        video_file = open(output_video, 'rb')
-        video_bytes = video_file.read()
-        st.video(video_bytes)
 
 if __name__ == "__main__":
     main()
