@@ -322,7 +322,6 @@ def main():
         # Process the video
         video_processor = VideoProcessor()
       
-        os.makedirs(output_dir, exist_ok=True)  # Create the output directory if it doesn't exist
         output_video_path = video_processor.process_video(uploaded_video_path)
 
         # Display the processed video
