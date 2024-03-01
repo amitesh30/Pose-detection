@@ -65,9 +65,9 @@ class VideoProcessor:
         self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
   
-    def process_video(self, video_path, output_dir):
+    def process_video(self, video_path):
         # Create a temporary directory within the output directory
-        temp_output_dir = tempfile.mkdtemp(dir=output_dir)
+        temp_output_dir = tempfile.mkdtemp()
 
         # Process the video and save the processed video to the temporary output directory
         output_filename = os.path.join(temp_output_dir, "processed_video.mp4")
@@ -321,9 +321,9 @@ def main():
 
         # Process the video
         video_processor = VideoProcessor()
-        output_dir = "output"  # Output directory
+      
         os.makedirs(output_dir, exist_ok=True)  # Create the output directory if it doesn't exist
-        output_video_path = video_processor.process_video(uploaded_video_path, output_dir)
+        output_video_path = video_processor.process_video(uploaded_video_path)
 
         # Display the processed video
       
