@@ -7,7 +7,6 @@ import math
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (LSTM, Dense, Dropout, Input, Flatten, 
                                      Bidirectional, Permute, multiply)
-import cv2
 import mediapy
 
 # Load the pose estimation model from Mediapipe
