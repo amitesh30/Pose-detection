@@ -1,6 +1,7 @@
 streamlit
 streamlit_webrtc
 keras==2.9.0
+protobuf==3.20.*
 notebook==6.4.11
 numpy==1.23.0
 Markdown==3.3.7
