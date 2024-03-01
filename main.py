@@ -331,6 +331,9 @@ def main():
         st.video(output_video_path)
 
         # Remove the temporary directory and its contents
+
+        shutil.rmtree(temp_dir)
+
         
 
 if __name__ == "__main__":
