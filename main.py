@@ -71,6 +71,7 @@ class VideoProcessor:
 
         # Process the video and save the processed video to the temporary output directory
         output_filename = os.path.join(temp_output_dir, "processed_video.mp4")
+        print(output_filename)
         
         cap = cv2.VideoCapture(video_path)
         frame_width = int(cap.get(3))
