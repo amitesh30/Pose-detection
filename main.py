@@ -64,9 +64,13 @@ class VideoProcessor:
         self.squat_stage = None
         self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
+  
     def process_video(self, video_path, output_dir):
-        # Process the video and save the processed video to the output directory
-        output_filename = os.path.join(output_dir, "processed_video.mp4")
+        # Create a temporary directory within the output directory
+        temp_output_dir = tempfile.mkdtemp(dir=output_dir)
+
+        # Process the video and save the processed video to the temporary output directory
+        output_filename = os.path.join(temp_output_dir, "processed_video.mp4")
         cap = cv2.VideoCapture(video_path)
         frame_width = int(cap.get(3))
         frame_height = int(cap.get(4))
