@@ -11,6 +11,10 @@ import mediapy
 import tempfile
 import shutil
 
+# Load the pose estimation model from Mediapipe
+mp_pose = mp.solutions.pose 
+mp_drawing = mp.solutions.drawing_utils 
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) 
 
 # Define the attention block for the LSTM model
 def attention_block(inputs, time_steps):
