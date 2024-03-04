@@ -1,43 +1,62 @@
 import os
+
+import av
 import streamlit as st
 import cv2
 import mediapipe as mp
 import numpy as np
 import math
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import (LSTM, Dense, Dropout, Input, Flatten, 
+from tensorflow.keras.layers import (LSTM, Dense, Dropout, Input, Flatten,
                                      Bidirectional, Permute, multiply)
 import mediapy
 import tempfile
 import shutil
 
+from streamlit_webrtc import VideoTransformerBase, webrtc_streamer
+
+
+class PoseEstimationTransformer(VideoTransformerBase):
+    def __init__(self, process_fn):
+        self.process_fn = process_fn
+
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.flip(img, 1)
+        img = self.process_fn(img)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
 # Load the pose estimation model from Mediapipe
-mp_pose = mp.solutions.pose 
-mp_drawing = mp.solutions.drawing_utils 
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) 
+mp_pose = mp.solutions.pose
+mp_drawing = mp.solutions.drawing_utils
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
 
 # Define the attention block for the LSTM model
 def attention_block(inputs, time_steps):
     a = Permute((2, 1))(inputs)
     a = Dense(time_steps, activation='softmax')(a)
     a_probs = Permute((2, 1), name='attention_vec')(a)
-    output_attention_mul = multiply([inputs, a_probs], name='attention_mul') 
+    output_attention_mul = multiply([inputs, a_probs], name='attention_mul')
     return output_attention_mul
+
 
 # Build and load the LSTM model
 @st.cache(allow_output_mutation=True)
-def build_model(HIDDEN_UNITS=256, sequence_length=30, num_input_values=33*4, num_classes=3):
+def build_model(HIDDEN_UNITS=256, sequence_length=30, num_input_values=33 * 4, num_classes=3):
     inputs = Input(shape=(sequence_length, num_input_values))
     lstm_out = Bidirectional(LSTM(HIDDEN_UNITS, return_sequences=True))(inputs)
     attention_mul = attention_block(lstm_out, sequence_length)
     attention_mul = Flatten()(attention_mul)
-    x = Dense(2*HIDDEN_UNITS, activation='relu')(attention_mul)
+    x = Dense(2 * HIDDEN_UNITS, activation='relu')(attention_mul)
     x = Dropout(0.5)(x)
     x = Dense(num_classes, activation='softmax')(x)
     model = Model(inputs=[inputs], outputs=x)
-    load_dir = "LSTM_Attention.h5"  
+    load_dir = "LSTM_Attention.h5"
     model.load_weights(load_dir)
     return model
+
 
 # Define the VideoProcessor class for real-time video processing
 class VideoProcessor:
@@ -45,11 +64,11 @@ class VideoProcessor:
         # Parameters
         self.actions = np.array(['curl', 'press', 'squat'])
         self.sequence_length = 30
-        self.colors = [(245,117,16), (117,245,16), (16,117,245)]
+        self.colors = [(245, 117, 16), (117, 245, 16), (16, 117, 245)]
         self.threshold = 0.5
 
         self.model = build_model(256)
-        
+
         # Detection variables
         self.sequence = []
         self.current_action = ''
@@ -63,7 +82,6 @@ class VideoProcessor:
         self.squat_stage = None
         self.pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-  
     def process_video(self, video_path):
         # Create a temporary directory within the output directory
         temp_output_dir = tempfile.mkdtemp()
@@ -71,7 +89,7 @@ class VideoProcessor:
         # Process the video and save the processed video to the temporary output directory
         output_filename = os.path.join(temp_output_dir, "processed_video.mp4")
         print(output_filename)
-        
+
         cap = cv2.VideoCapture(video_path)
         frame_width = int(cap.get(3))
         frame_height = int(cap.get(4))
@@ -89,14 +107,14 @@ class VideoProcessor:
 
         # Return the path to the processed video file
         return output_filename
-    
+
     def process_frame(self, frame, results):
         # Process the frame using the `process` function
         processed_frame = self.process(frame)
         return processed_frame
-    
+
     def process(self, image):
-      
+
         # Pose detection model
         image.flags.writeable = False
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -105,57 +123,55 @@ class VideoProcessor:
         # Draw the hand annotations on the image.
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        self.draw_landmarks(image, results) 
-        
+        self.draw_landmarks(image, results)
+
         # Prediction logic
-        keypoints = self.extract_keypoints(results)        
-        self.sequence.append(keypoints.astype('float32',casting='same_kind'))      
+        keypoints = self.extract_keypoints(results)
+        self.sequence.append(keypoints.astype('float32', casting='same_kind'))
         self.sequence = self.sequence[-self.sequence_length:]
-        
+
         if len(self.sequence) == self.sequence_length:
             res = self.model.predict(np.expand_dims(self.sequence, axis=0), verbose=0)[0]
-            
+
             self.current_action = self.actions[np.argmax(res)]
             confidence = np.max(res)
             print("confidence", confidence)  # Debug print statement
-            print("current action" , self.current_action)
-            
+            print("current action", self.current_action)
+
             # Erase current action variable if no probability is above threshold
             if confidence < self.threshold:
                 self.current_action = ''
-                
-                
-            print("current action" , self.current_action)
 
+            print("current action", self.current_action)
 
             # Viz probabilities
             image = self.prob_viz(res, image)
-            
+
             # Count reps
-            
+
             landmarks = results.pose_landmarks.landmark
             self.count_reps(image, landmarks, mp_pose)
-            
 
             # Display graphical information
-            cv2.rectangle(image, (0,0), (640, 40), self.colors[np.argmax(res)], -1)
-            cv2.putText(image, 'curl ' + str(self.curl_counter), (3,30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.putText(image, 'press ' + str(self.press_counter), (240,30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.putText(image, 'squat ' + str(self.squat_counter), (490,30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-          
+            cv2.rectangle(image, (0, 0), (640, 40), self.colors[np.argmax(res)], -1)
+            cv2.putText(image, 'curl ' + str(self.curl_counter), (3, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(image, 'press ' + str(self.press_counter), (240, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(image, 'squat ' + str(self.squat_counter), (490, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
         return image
 
     def draw_landmarks(self, image, results):
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
-                                  mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2), 
-                                  mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2))
+                                  mp_drawing.DrawingSpec(color=(245, 117, 66), thickness=2, circle_radius=2),
+                                  mp_drawing.DrawingSpec(color=(245, 66, 230), thickness=2, circle_radius=2))
         return image
 
     def extract_keypoints(self, results):
-        pose = np.array([[res.x, res.y, res.z, res.visibility] for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4)
+        pose = np.array([[res.x, res.y, res.z, res.visibility] for res in
+                         results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33 * 4)
         return pose
 
     def count_reps(self, image, landmarks, mp_pose):
@@ -180,7 +196,7 @@ class VideoProcessor:
             if angle > 140 and self.curl_stage == 'up':
                 self.curl_stage = "down"
                 self.curl_counter += 1
-                print("count:",self.curl_counter)
+                print("count:", self.curl_counter)
             self.press_stage = None
             self.squat_stage = None
 
@@ -209,9 +225,8 @@ class VideoProcessor:
             if (elbow_angle < 50) and (shoulder2elbow_dist > shoulder2wrist_dist) and (self.press_stage == 'up'):
                 self.press_stage = 'down'
                 self.press_counter += 1
-                
-                
-                print("count:",self.press_counter)
+
+                print("count:", self.press_counter)
             self.curl_stage = None
             self.squat_stage = None
 
@@ -252,7 +267,7 @@ class VideoProcessor:
                     right_hip_angle > thr) and (self.squat_stage == 'down'):
                 self.squat_stage = 'up'
                 self.squat_counter += 1
-                print("count:",self.squat_counter)
+                print("count:", self.squat_counter)
             self.curl_stage = None
             self.press_stage = None
 
@@ -271,43 +286,31 @@ class VideoProcessor:
         
         """
         output_frame = input_frame.copy()
-        for num, prob in enumerate(res):        
-            cv2.rectangle(output_frame, (0,60+num*40), (int(prob*100), 90+num*40), self.colors[num], -1)
-            cv2.putText(output_frame, self.actions[num], (0, 85+num*40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)
-            
+        for num, prob in enumerate(res):
+            cv2.rectangle(output_frame, (0, 60 + num * 40), (int(prob * 100), 90 + num * 40), self.colors[num], -1)
+            cv2.putText(output_frame, self.actions[num], (0, 85 + num * 40), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                        (255, 255, 255), 2, cv2.LINE_AA)
+
         return output_frame
 
     def get_coordinates(self, landmarks, mp_pose, side, part):
-        
-        
-        coord = getattr(mp_pose.PoseLandmark,side.upper()+"_"+part.upper())
+
+        coord = getattr(mp_pose.PoseLandmark, side.upper() + "_" + part.upper())
         x_coord_val = landmarks[coord.value].x
         y_coord_val = landmarks[coord.value].y
-        return [x_coord_val, y_coord_val] 
-    
-    
-   
-       
-
-
+        return [x_coord_val, y_coord_val]
 
     def calculate_angle(self, a, b, c):
-        a = np.array(a) 
-        b = np.array(b) 
+        a = np.array(a)
+        b = np.array(b)
         c = np.array(c)
-        radians = math.atan2(c[1]-b[1], c[0]-b[0]) - math.atan2(a[1]-b[1], a[0]-b[0])
-        angle = np.abs(radians*180.0/np.pi)
+        radians = math.atan2(c[1] - b[1], c[0] - b[0]) - math.atan2(a[1] - b[1], a[0] - b[0])
+        angle = np.abs(radians * 180.0 / np.pi)
         if angle > 180.0:
             angle = 360 - angle
         return angle
 
     def viz_joint_angle(self, image, angle, joint):
-        cv2.putText(image, str(round(angle, 2)), 
-                    tuple(np.multiply(joint, [640, 480]).astype(int)), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2, cv2.LINE_AA)
-
-
-
-
-
-
+        cv2.putText(image, str(round(angle, 2)),
+                    tuple(np.multiply(joint, [640, 480]).astype(int)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
